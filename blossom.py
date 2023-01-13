@@ -1,11 +1,12 @@
 import networkx as nx
 from itertools import combinations, repeat
 # G is a non empty, undirected graph, networkX graph
-def blossom_algorithm(G):
+def blossom_algorithm(G, weight = "weight"):
   class Blossom:
     # slots, can rewrite this
     __slots__ = ["childs", "edges", "mybestedges"]
 
+    # function for the leaves
     def leaves(self):
       for t in self.children:
         if isinstance(t, Blossom):
@@ -58,6 +59,19 @@ def blossom_algorithm(G):
   # newly discovered S-vertices
   queue = []
 
+  def slack(v, w):
+    return dualvar[v] + dualvar[w] - 2 * G[v][w].get(weight, 1)
+
+  # assign the t label to top-level blossom that has vertex w
+
+  def assignLabel(w, t, v):
+    b = vertBlossom[w]
+    # is this needed
+    assert label.get(w) is None and label.get(b) is None
+
+    label[w] = label[b] = t
+    if v is not None:
+      
   # making a new blossom with base = base, through S-vertices v and w
   def addBlossom(base, v, w):
     bb = vertBlossom[base]
