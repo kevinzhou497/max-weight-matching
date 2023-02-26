@@ -25,6 +25,8 @@ def matching_dict_to_set(matching):
             raise nx.NetworkXError(f"Selfloops cannot appear in matchings {edge}")
         edges.add(edge)
     return edges
+  
+  
 # 1 weight matching using the primal dual method
 
 # G is a non empty, undirected graph, networkX graph
@@ -36,6 +38,17 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
     __slots__ = ["children", "edges", "mybestedges"]
 
     # function for the leaves
+    # b.childs is an ordered list of b's sub-blossoms, starting with
+    # the base and going round the blossom.
+
+    # b.edges is the list of b's connecting edges, such that
+    # b.edges[i] = (v, w) where v is a vertex in b.childs[i]
+    # and w is a vertex in b.childs[wrap(i+1)].
+
+    # If b is a top-level S-blossom,
+    # b.mybestedges is a list of least-slack edges to neighbouring
+    # S-blossoms, or None if no such list has been computed yet.
+    # This is used for efficient computation of delta3.
     
     
     def leaves(self):
@@ -48,15 +61,16 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
 
   # get the nodes of graph G
   nodes = list(G)
-  maxWeight = 0
+  if not nodes:
+    return set()
 
   # Finding the maximum edge weight
-  maxweight = 0
+  maxWeight = 0
   allintegers = True
   for i, j, d in G.edges(data = True):
     wt = d.get(weight, 1)
-    if i != j and wt > maxweight:
-      maxweight = wt
+    if i != j and wt > maxWeight:
+      maxWeight = wt
     allintegers = allintegers and (str(type(wt)).split("'")[1] in ("int", "long"))
     
   # If v is a matched vertex, mate[v] is its partner vertex.
@@ -116,7 +130,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
   # coming through an edge from vertex v
   def assignLabel(w, t, v):
     b = inBlossom[w]
-    # is this needed
+    
     assert label.get(w) is None and label.get(b) is None
 
     label[w] = label[b] = t
@@ -129,32 +143,49 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
     if t == 1:
       # this means b became an S-vertex or blossom, so add it to the queue
       if isinstance(b, Blossom):
+        # adding all vertices of a blossom to the queue
         queue.extend(b.leaves())
+      else:
+        queue.append(b)
     elif t == 2:
-      base = base[b]
+      base = blossomBase[b]
       assignLabel(mate[base], 1, base)
       
   
   def scanBlossom(v, w):
     path = []
+    
     base = NoNode
     while v is not NoNode:
       # Look for a breadcrumb in v's blossom or put new
+      # b is blossom of v
       b = inBlossom[v]
+      
+      # why 4?
+      # 4 is 100 
+      # if label[b] is 0 or 2 this works because they share the unit place
       if label[b] & 4:
         base = blossomBase[b]
         break
+      # only way it gets here is if label[b] == 1
       assert label[b] == 1
       path.append(b)
+      # 5 is 101 so the only one that wouldn't work is 10 aka label[b] = 2
       label[b] = 5
       
       if labeledge[b] is None:
+        # the base o fthe blossom b is single, stop tracing
         assert blossomBase[b] not in mate
         v = NoNode
+      # 
       else:
+        # labeledge[b][0] gets the v
         assert labeledge[b][0] == mate[blossomBase[b]]
+        # v is where b got its label
         v = labeledge[b][0]
+        # 
         b = inBlossom[v]
+        # b is a T blossom, trace one more step back
         assert label[b] == 2
         v = labeledge[b][0]
         
@@ -186,7 +217,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
     while bv != bb:
       parent[bv] = b
       path.append(bv)
-      edgs.ppend(labeledge[bv])
+      edgs.append(labeledge[bv])
       assert label[bv] == 2 or (
         label[bv] == 1 and labeledge[bv][0] == mate[blossomBase[bv]]
       )
@@ -224,6 +255,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
       # relabel vertices
       for v in b.leaves():
         if label[inBlossom[v]] == 2:
+          # putting the t vertices into the queue
           queue.append(v)
         inBlossom[v] = b
       
@@ -258,6 +290,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
       b.mybestedges = list(bestedgeto.values())
       
       # select bestedge[b]
+      # why does this part matter
       mybestedge = None
       bestedge[b] = None
       for k in b.mybestedges:
@@ -265,6 +298,8 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
         if mybestedge is None or kslack < mybestslack:
           mybestedge = k
           mybestslack = kslack
+        # setting the bestedge
+      bestedge[b] = mybestedge
   def expandBlossom(b, endstage):
     # Convert sub blossoms into top level blossoms
     for s in b.children:
@@ -358,7 +393,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
     if isinstance(t, Blossom):
       augmentBlossom(t, v)
     
-    # Decide in which direction we go round the blossom
+    # Decide in which direction we go around the blossom
     i = j = b.children.index(t)
     if i & 1:
       j -= len(b.children)
@@ -409,25 +444,25 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
         )
         
       # augment through the S-blososm from s to base
-      if isinstance(bs, Blossom):
-        augmentBlossom(bs, s)
-      # Update mate[s]
-      mate[s] = j 
-      # Trace one step back
-      if labeledge[bs] is None:
-        # this is a single vertex so break
-        break 
-      t = labeledge[bs][0]
-      bt = inBlossom[t]
-      assert label[bt] == 2 
-      # Trace one step back
-      s, j = labeledge[bt]
-      
-      # augment through the T-blossom from j to base 
-      assert blossomBase[bt] == t 
-      if isinstance(bt, Blossom):
-        augmentBlossom(bt, j)
-      mate[j] = s
+        if isinstance(bs, Blossom):
+          augmentBlossom(bs, s)
+        # Update mate[s]
+        mate[s] = j 
+        # Trace one step back
+        if labeledge[bs] is None:
+          # this is a single vertex so break
+          break 
+        t = labeledge[bs][0]
+        bt = inBlossom[t]
+        assert label[bt] == 2 
+        # Trace one step back
+        s, j = labeledge[bt]
+        
+        # augment through the T-blossom from j to base 
+        assert blossomBase[bt] == t 
+        if isinstance(bt, Blossom):
+          augmentBlossom(bt, j)
+        mate[j] = s
   def verifyOptimum():
     # might not be relevant here
     if maxcardinality: 
@@ -448,7 +483,6 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
       iblossoms = [i]
       jblossoms = [j]
       
-      # what is this part about? iblossoms and jblossoms?
       while parent[iblossoms[-1]] is not None:
         iblossoms.append(parent[iblossoms[-1]])
       while parent[jblossoms[-1]] is not None:
@@ -461,6 +495,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
         if bi != bj:
           break
         s += 2 * blossomdual[bi]
+     
       assert s >= 0 
       if mate.get(i) == j or mate.get(j) == i:
         assert mate[i] == j and mate[j] == i
@@ -476,11 +511,9 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
           for (i, j) in b.edges[1::2]:
             assert mate[i] == j and mate[j] == i
   # main loop: continue until cant make improvements anymore
-  while True: 
+  while 1: 
     # each iteration is a stage
     # a stage finds an augmenting path and uses it to improve the matching
-    
-    
     # remove labels from top level blossoms / vertices
     label.clear()
     labeledge.clear()
@@ -495,71 +528,108 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
     # clear the queue
     queue[:] = []
     
-    # label single blossoms/vertices with S and put them in the queue
+    # label all single blossoms/vertices with S and put them in the queue
+    # first, label all single blossoms/vertices with S and put them in the queue
     for v in nodes:
       if (v not in mate) and label.get(inBlossom[v]) is None:
         assignLabel(v, 1, None)
         
     # loop until augment the matching
     augmented = 0 
-    while True:
+    while 1:
+      
       # Each iteration is a substage 
       # tries to find augmenting path 
       # improves matching 
       # primal dual method pumps some slack of the dual variables
       
       # Continue labeling until all vertices which are reachable through an alternating path have got a label
-      while queue and not augmented: 
-        
+      # keep going until queue runs out basically
+      while queue and not augmented:    
         # take an S vertex from the queue
         v = queue.pop()
-        # this means S blossom
+        # this means it's in a S blossom
         assert label[inBlossom[v]] == 1
         
         # Scan neighbors
         for w in G.neighbors(v):
+          
+          # don't want to look at a self-loop
           if w == v:
             continue 
+          # blossom of v
           bv = inBlossom[v]
+          
+          # blossom of w
           bw = inBlossom[w]
+          # dont consider edges within a blossom
           if bv == bw:
             # this edge is internal to a blossom
             continue
+          
+          # if pi_(v,w) has > 0 slack 
           if (v, w) not in zeroSlack:
+            # if it's negative, we allow it and count it as zero slack
             kslack = slack(v, w)
             if kslack <= 0:
               # edge k has zero slack -> it is allowable
               zeroSlack[(v,w)] = zeroSlack[(w,v)] = True
           if (v, w) in zeroSlack:
+            
+            # this means the w blossom is a free blossom
             if label.get(bw) is None:
+              # this is case C1
               # (C1) w is a free vertex
               # label w with T and label its mate with S (R12)
-              
+              # since v is an S vertex, label w with T
               # assigning label 2 to the blossom with w coming through an edge from 
               # vertex v, since (v, w) has zero slack
               assignLabel(w, 2, v)
+            # if bw is an S 
+            # this is case C2
+            # check if theres a shared base (s_i == s_j)
             elif label.get(bw) == 1:
+              # scan for new blossom
               base = scanBlossom(v, w)
+              # base not being NoNode mean that theres a shared s_i between v and w, so make this a blossom
               if base is not NoNode:
                 # found a new blossom
+            
                 addBlossom(base, v, w)
               else:
+                # if didn't find a new blossom, then
                 # found an augmenting path
+                # s_i and s_j are different so augment the matching here
                 augmentMatching(v, w)
+          
                 augmented = 1
                 break
+            # if w hasn't been labeled but it's in a T blossom
             elif label.get(w) is None:
+              # the blossom of w should be T
               assert label[bw] == 2 
+              # label w T
               label[w] = 2
               labeledge[w] = (v,w)
+          # if blossom of w is S
           elif label.get(bw) == 1:
+            # keep track of the least-slack non-allowable edge to
+            # a different S-blossom.
+            # * is used to pass the terms of bestedge[bv] into slack function as separate arguments
             if bestedge.get(bv) is None or kslack < slack(*bestedge[bv]):
+              
               bestedge[bv] = (v,w)
           elif label.get(w) is None:
+            # w is a free vertex (or an unreached vertex inside
+            # a T-blossom) but we can not reach it yet;
+            # keep track of the least-slack edge that reaches w.
             if bestedge.get(w) is None or kslack < slack(*bestedge[w]):
               bestedge[w] = (v,w)
+      # if augmented, break this loop and start the loop again (from the outermost one)
+      # this is after the queue ended or augmented became true
       if augmented:
         break
+      # if search failed
     
       # There is no augmenting path under these constraints:
       # compute delta and reduce slack in the optimization problem
@@ -574,7 +644,9 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
       # delta2: the minimum slack on any edge between an S vertex 
       # and a free vertex
       for v in G.nodes():
+        # if d doesn't exist, not taken through here
         if label.get(inBlossom[v]) is None and bestedge.get(v) is not None:
+
           d = slack(*bestedge[v])
           if deltatype == -1 or d < delta:
             delta = d
@@ -618,6 +690,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
         if label.get(inBlossom[v]) == 1:
           # S-vertex: 2*u = 2*u - 2*delta
           dualvar[v] -= delta 
+          # for T vertices
         elif label.get(inBlossom[v]) == 2:
           dualvar[v] += delta 
       for b in blossomdual:
@@ -627,7 +700,8 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
           elif label.get(b) == 2:
             blossomdual[b] -= delta
       
-      # take action at any point where minimum delta occured
+      # take action at any point where minimum delta occurred
+      # if delta is 1, break - no more improvements possible 
       if deltatype == 1:
         break 
       elif deltatype == 2:
@@ -641,23 +715,26 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
         zeroSlack[(v,w)] = zeroSlack[(w,v)] = True 
         assert label[inBlossom[v]] == 1 
         queue.append(v)
+        # appending to queue to continue the search
       elif deltatype == 4:
         # expand least z blossom
         expandBlossom(deltablossom, False)
-      
       # End of this substage
     # check matching is symmetric 
     for v in mate:
       assert mate[mate[v]] == v 
       
-    # stop when no more augmenting paths
+    # stop when no more augmenting paths at all
     if not augmented:
+      # gets here
       break
   
     # expand all S blossoms which have zero dual
+    # do this regardless of the delta
     for b in list(blossomdual.keys()):
       if b not in blossomdual:
         continue 
+      # if the z_k is 0 and is an S blossom, expand the blossom
       if parent[b] is None and label.get(b) == 1 and blossomdual[b] == 0:
         expandBlossom(b, True)
   if allintegers:
@@ -667,7 +744,7 @@ def blossom_algorithm(G, maxcardinality=False, weight = "weight"):
         
       
 
-                
+        
         
       
         
